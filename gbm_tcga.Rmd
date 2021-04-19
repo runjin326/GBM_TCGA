@@ -1,0 +1,59 @@
+---
+title: "GBM TCGA Data Interrogation"
+author: "Run Jin"
+output: html_document
+---
+
+Load all required packages for data retrieval and interrogation: 
+
+```{r setup, message = FALSE}
+BiocManager::install("curatedTCGA")
+library(curatedTCGAData)
+
+```
+
+# Basic Dataset Inspection
+
+Getting mutation, methylation, RNAseq data and related metadata from curated TCGA dataset. and show a summary table with the number of datasets per sample.
+
+```{r grabData}
+gbmData = curatedTCGAData("GBM", c("RNASeq2GeneNorm", "Mutation", "Methylation_methyl450"), dry.run = FALSE)
+sampleMap(gbmData)
+table(table(sampleMap(gbmData)$primary))
+```
+
+Getting relevant clinical data, show the number of patients and the number of varialbes. Also inspect some of variable names. 
+
+```{r}
+clin = colData(gbmData)
+dim(clin) 
+head(colnames(clin), 20)
+```
+
+Separate the patients based on age groups and explore age distribution and their vital status. We are interested in wheterh GBM at different age groups would have different methylation, expression and mutation profile.
+
+```{r}
+clin$age_group <- cut(clin$patient.age_at_initial_pathologic_diagnosis, seq(20, 90, 10))
+table(clin$age_group)
+table(clin$age_group, clin$vital_status)
+```
+
+Getting mutation data from dataset. Again, having some higher level understanding of the dataset.
+
+```{r}
+mut = gbmData[[1]]
+mut 
+dim(mut)
+```
+
+Now we want to combine the clinical information with the mutatin information. And we look at the colnames and make them identical for direct integration.
+
+```{r}
+mut_samp_ids = colnames(mut)
+head(mut_samp_ids)
+head(rownames(clin))
+mut_samp_ids = substr(mut_samp_ids,1,12) 
+all(mut_samp_ids %in% rownames(clin))
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

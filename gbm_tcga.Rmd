@@ -38,6 +38,21 @@ table(clin$age_group)
 table(clin$age_group, clin$vital_status)
 ```
 
+With just clinical information, we can generate survival graph based on different groups:
+
+```{r}
+library(survival)
+ey = 1*(clin$vital_status == 1)
+fut = as.numeric(clin$days_to_death)
+su = Surv(fut, ey)
+plot(survfit(su~age_group, data = clin), lwd = 2, lty = 1:4, xlim=c(0,3000))
+ntab = table(clin$age_group)
+ns = paste("[n=", ntab, "]", sep = "")
+legend(1200, 1, lty=1:4, lwd = 2, legend = paste(levels(clin$age_group), ns))
+```
+
+#Combining mutation data with clinical information
+
 Getting mutation data from dataset. Again, having some higher level understanding of the dataset.
 
 ```{r}
@@ -56,4 +71,153 @@ mut_samp_ids = substr(mut_samp_ids,1,12)
 all(mut_samp_ids %in% rownames(clin))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Now we get the mutation information for each specimen and store them as GRanges lists. Inspect one of the them and look at what is stored.
+
+```{r}
+mut_assay = mut@assays
+mut_assay[[1]]
+mut_assay[[1]]$Hugo_Symbol
+table(mut_assay[[1]]$Variant_Classification)
+```
+
+Now get a summary table with all the specimens, different gene name and variant classification. Summary based on each gene - what type of variant classes are there and how many. 
+
+```{r}
+mut_df = mapply(function(id, a) {
+    d = as.data.frame(mcols(a)[c("Hugo_Symbol", "Variant_Classification")])
+    names(d) = c("symbol", "variant_class")
+    d$patientID = id
+    d
+}, id = mut_samp_ids, a = mut_assay, SIMPLIFY = FALSE, USE.NAMES = FALSE)
+
+mut_df = do.call(rbind, mut_df)
+head(mut_df)
+mut_tab = table(mut_df$symbol, mut_df$variant_class)
+```
+
+Take the sum of mutations for 4 most important mutation types and show the top 10 most mutated genes:
+```{r}
+mut_num = apply(mut_tab[, c("Missense_Mutation", "Nonsense_Mutation", 
+                            "Frame_Shift_Del", "Frame_Shift_Ins")], 1, sum)
+
+mut_order = order(mut_num, decreasing = TRUE)
+mut_tab[mut_order[1:10], c("Missense_Mutation", "Nonsense_Mutation", 
+                           "Frame_Shift_Del", "Frame_Shift_Ins")]
+```
+
+Now we count the number of mutations in each specimen and draw a histogram to visualize it:
+```{r}
+nmut = sapply(split(mut_df$patientID, mut_df$patientID),length)
+hist(nmut, main = "Histogram of number of mutations per specimen")
+```
+
+At the same time, we can also visualize the number of mutations based on age group. First, we use the names of the nmut (specimens that have mutation data) to subset the clin database. Then we plot box plot - either based on age group or histological type.
+```{r}
+clinwmut = clin[names(nmut),]
+with(clinwmut, boxplot(split(nmut, age_group), log="y"))
+with(clinwmut, boxplot(split(nmut, histological_type), log="y"))
+```
+
+Now that we can also see for the most commonly mutated genes, whether the mutation rate is different among age groups - we use EGFR as example but TP53 and any other gene can be viewed as well:
+```{r}
+egfr_mut_pts = mut_df[mut_df$symbol == "EGFR","patientID"]
+clinwmut$egfr_mut = clinwmut$patientID %in% egfr_mut_pts
+table(clinwmut$egfr_mut, clinwmut$age_group)
+```
+
+#Loading RNAseq data and do interrogation
+
+First, figure out the data structure of the RNAseq datasets:
+```{r}
+rnaseq = gbmData[[2]]
+rnaseq
+assay(rnaseq)[1:3, 1:3]
+```
+
+Transfer RNAseq into log scale:
+```{r}
+assay(rnaseq) = log2(assay(rnaseq) + 1)
+assay(rnaseq)[1:3, 1:3]
+```
+
+Just like other assays, only keep the first 12 characters:
+```{r}
+colnames(rnaseq) = substr(colnames(rnaseq),1,12)   
+colData(rnaseq) = clin[colnames(rnaseq),]
+```
+
+Now find the genes that are differentially expressed based on age group. We use limma package to do statistical analysis and then we can get a top table with the most differentially expressed genes amongst age group.
+```{r}
+library(limma)
+mm = model.matrix(~age_group, data=colData(rnaseq))
+f1 = lmFit(assay(rnaseq)[,which(colnames(rnaseq) %in% rownames(mm))], mm)
+ef1 = eBayes(f1)
+topTable(ef1)
+```
+
+Now we are interested in using boxplot to visualize the changes among age groups:
+
+```{r}
+boxplot(split(assay(rnaseq)["RANBP17",], rnaseq$age_group), main="RANBP17")
+boxplot(split(assay(rnaseq)["EGFR",], rnaseq$age_group), main="EGFR") 
+```
+
+#Combining methylation data with RNAseq and Clinical Data
+
+First read in the methylation dataset. And we want to subset only the primary solid tumor information. 
+```{r}
+methyl = gbmData[[3]]
+methyl
+assay(methyl)
+
+isprimary = sapply(strsplit(colnames(methyl), split = "-"), `[[`, 4) == "01A"
+methyl = methyl[, isprimary]
+```
+
+Similar to previous manipulation, we keep the 12 characters and synchronize the names. And then we see how many specimens have both RNAseq and methylation data:
+```{r}
+colnames(methyl) = substr(colnames(methyl),1,12)
+colData(methyl) = clin[colnames(methyl),]
+length(intersect(colnames(methyl), colnames(rnaseq)))
+common_methylrna = intersect(colnames(methyl), colnames(rnaseq))
+
+methyl_subset = methyl[,common_methylrna]
+rnaseq_subset = rnaseq[,common_methylrna]
+
+methyl_genes = rowData(methyl_subset)$Gene_Symbol
+head(methyl_genes)
+```
+
+Working on integrating methylation data with expression data, as well as gene symbol:
+
+```{r}
+me_rna_cor = function(sym, mpick = 3){
+    # subset methylation data to first mpick methylation sites for given gene symbol
+    methyl_ind = which(methyl_genes == sym)
+    if (length(methyl_ind) > mpick){    
+        methyl_ind = methyl_ind[1:mpick]
+    }
+    methyl_dat = assay(methyl_subset)[methyl_ind,]    # subset to selected methylation sites
+
+    # subset expression data to selected gene symbol
+    expr_ind = which(rownames(rnaseq_subset) == sym)    
+    expr_dat = assay(rnaseq_subset)[expr_ind,]
+
+    # combine methylation and expression data as data frame
+    combined_dat = as(t(methyl_dat), "DataFrame")
+    combined_dat$expr = expr_dat
+
+    # plot pairs and calculate correlation coefficients between methylation and expression
+    pairs(combined_dat)
+    sapply(1:mpick, function(i){
+        cor(as.numeric(combined_dat[,i]), combined_dat[,mpick+1])
+    })
+}
+```
+
+Now we can look at genes and figure out their expression, methylation correlations:
+```{r}
+me_rna_cor("MGMT", mpick=2)
+```
+
+

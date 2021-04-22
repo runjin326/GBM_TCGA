@@ -128,3 +128,37 @@ two_extremes = glioData[ , two_extremes, ]
 clin_2x = colData(two_extremes)
 
 ```
+Now prep the data for bumphunter. Prepare GRanges and methylation data so that all the NA positions and 
+
+```{r}
+methyl_gbm = assay(two_extremes[[1]])
+methyl_odg = assay(two_extremes[[2]])
+methyl2x = cbind(methyl_gbm, methyl_odg)
+rm(list = apropos("methyl_gbm"))
+rm(list = apropos("methyl_odg"))
+
+istumor_all = sapply(strsplit(colnames(methyl2x), split = "-"), `[[`, 4) != "11A"
+methyl2x = methyl2x[, istumor_all]
+colnames(methyl2x) = substr(colnames(methyl2x), 1, 12)
+
+methyl2x = methyl2x[ , rownames(colData(two_extremes))]
+
+isnotna = rowData(two_extremes[[1]])$Genomic_Coordinate != "0"
+methyl2x_gr = rowData(two_extremes[[1]])[isnotna, ]
+rownames(methyl2x_gr)
+methyl2x = methyl2x[rownames(methyl2x_gr), ]
+methyl2x_gr= makeGRangesFromDataFrame(methyl2x_gr, seqnames.field = "Chromosome", start.field = "Genomic_Coordinate", end.field = "Genomic_Coordinate")
+```
+
+Initiate the bumphunter program.
+```{r}
+library(bumphunter)
+chr=as.factor(seqnames(methyl2x_gr)) 
+pos=start(methyl2x_gr)
+cl=clusterMaker(chr,pos,maxGap=500)
+methyl2x = as.matrix(methyl2x)
+
+x <- model.matrix(~colData(two_extremes)$histological_type)
+res<-bumphunter(methyl2x,x,chr=chr,pos=pos,cluster=cl,cutoff=0.1,B=0)
+```
+

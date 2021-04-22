@@ -200,6 +200,7 @@ chr <- as.character(unique(seqnames(methyl2x_tab_gr3)))
 dtrack <- DataTrack(results_top, name = "methylation")
 atrack <- AnnotationTrack(results_top, name = "CpG")
 itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
-plotTracks(list(itrack, dtrack, atrack), groups = clin_2x$histological_type, type = c("b"), aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
-
+gtrack <- GenomeAxisTrack()
+grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl2x_tab_gr3), end =end(methyl2x_tab_gr3), name = "ENSEMBL", transcriptAnnotation = "symbol")
+plotTracks(list(itrack, dtrack, atrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 ```

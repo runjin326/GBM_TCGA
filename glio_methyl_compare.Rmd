@@ -201,7 +201,6 @@ dtrack <- DataTrack(results_top, name = "methylation")
 atrack <- AnnotationTrack(results_top, name = "CpG")
 itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
 gtrack <- GenomeAxisTrack()
-grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl2x_tab_gr3), end =end(methyl2x_tab_gr3), name = "ENSEMBL", transcriptAnnotation = "symbol")
 plotTracks(list(itrack, dtrack, atrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 ```
 Now we can make that into a function so that we can give it an index i and we can then visualize ith region.
@@ -218,7 +217,6 @@ MbyRegion_data = function(i){
   atrack <- AnnotationTrack(results_top, name = "CpG")
   itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
   gtrack <- GenomeAxisTrack()
-  grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl2x_tab_top), end =end(methyl2x_tab_top), name = "ENSEMBL", transcriptAnnotation = "symbol")
   #finally draw graphs
   plotTracks(list(itrack, dtrack, gtrack, atrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 }
@@ -228,4 +226,28 @@ MbyRegion_data = function(i){
 For example, look at the first region.
 ```{r}
 MbyRegion_data(1)
+```
+
+If we want to see the gene near the region, we can use the following function - basically just adding a grTrack to the graph.
+```{r}
+MbyRegion = function(i){
+  #first, define the region
+  methyl2x_tab_top <- methyl2x_tab_gr[i,]
+  results_top <- subsetByOverlaps(methyl2x_gr, methyl2x_tab_top)
+  #next define tracks 
+  library(Gviz)
+  chr <- as.character(unique(seqnames(methyl2x_tab_top)))
+  dtrack <- DataTrack(results_top, name = "methylation")
+  atrack <- AnnotationTrack(results_top, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl2x_tab_top), end =end(methyl2x_tab_top), name = "ENSEMBL", transcriptAnnotation = "symbol")
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+```
+
+For example, find the gene that is related to the first region.
+```{r}
+MbyRegion(1)
 ```

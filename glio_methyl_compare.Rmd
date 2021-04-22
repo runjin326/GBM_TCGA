@@ -162,3 +162,44 @@ x <- model.matrix(~colData(two_extremes)$histological_type)
 res<-bumphunter(methyl2x,x,chr=chr,pos=pos,cluster=cl,cutoff=0.1,B=0)
 ```
 
+Note that the GRanges for the methyl2x does not have "chr" in front and that will cause issues later. Therefore, use a package to fix that. At the same time, bumphunter only takes data frame for input, therefore, need to change that. Additionally, adding the methyl2x into the methyl2x_gr as metadata will make the following workflow easier.
+
+```{r}
+BiocManager::install("diffloop")
+library(diffloop)
+methyl2x_gr = addchr(methyl2x_gr)
+methyl2x = as.matrix(methyl2x)
+values(methyl2x_gr) <- as.data.frame(methyl2x)
+```
+
+Initiate the bumphunter program. Basically, we need to tell it what data for datatrack, what is the GRanges track, we can also add annotatioon track and itrack.
+```{r}
+
+library(bumphunter)
+chr=as.factor(seqnames(methyl2x_gr)) 
+pos=start(methyl2x_gr)
+cl=clusterMaker(chr,pos,maxGap=500)
+x <- model.matrix(~colData(two_extremes)$histological_type)
+methyl2x_res<-bumphunter(methyl2x,x,chr=chr,pos=pos,cluster=cl,cutoff=0.1,B=0)
+```
+
+Find a region that is interesting and try to visualize. For example just look at the third most differentiated bump.
+```{r}
+methyl2x_tab <- methyl2x_res$table
+methyl2x_tab_gr<- makeGRangesFromDataFrame(methyl2x_tab)
+
+methyl2x_tab_gr3 <- methyl2x_tab_gr[3,]
+results_top <- subsetByOverlaps(methyl2x_gr, methyl2x_tab_gr3)
+```
+
+Define different tracks for Gviz dataset.
+
+```{r}
+library(Gviz)
+chr <- as.character(unique(seqnames(methyl2x_tab_gr3)))
+dtrack <- DataTrack(results_top, name = "methylation")
+atrack <- AnnotationTrack(results_top, name = "CpG")
+itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+plotTracks(list(itrack, dtrack, atrack), groups = clin_2x$histological_type, type = c("b"), aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+
+```

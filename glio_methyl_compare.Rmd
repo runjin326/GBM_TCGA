@@ -145,7 +145,7 @@ methyl2x = methyl2x[ , rownames(colData(two_extremes))]
 
 isnotna = rowData(two_extremes[[1]])$Genomic_Coordinate != "0"
 methyl2x_gr = rowData(two_extremes[[1]])[isnotna, ]
-rownames(methyl2x_gr)
+
 methyl2x = methyl2x[rownames(methyl2x_gr), ]
 methyl2x_gr= makeGRangesFromDataFrame(methyl2x_gr, seqnames.field = "Chromosome", start.field = "Genomic_Coordinate", end.field = "Genomic_Coordinate")
 ```

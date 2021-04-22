@@ -1,0 +1,130 @@
+---
+title: "Methylation Level Comparison"
+author: "Run Jin"
+date: "4/21/2021"
+output: html_document
+---
+
+## Methylation Level Comparison 
+
+Load all required packages for data retrieval and interrogation: 
+
+```{r setup, message = FALSE}
+BiocManager::install("curatedTCGAData")
+library(curatedTCGAData)
+```
+
+# Basic Dataset Inspection
+
+Getting methylatio data only and related metadata from curated TCGA dataset. And show a summary table with the number of datasets per sample. Use browseVignette to see what disease code and what experiments to look at.
+
+```{r grabData}
+
+gbmData = curatedTCGAData("GBM", c("Methylation_methyl450"), dry.run = FALSE)
+lggData = curatedTCGAData("LGG", c("Methylation"), dry.run = FALSE)
+sampleMap(gbmData)
+sampleMap(lggData)
+
+methyl_gbm = gbmData[[1]]
+methyl_lgg = lggData[[1]]
+dim(methyl_gbm)
+dim(methyl_lgg)
+```
+
+The goal is to compare methylation of gbm compared to normal samples. Therefore, figure out whether we have normal samples and how many.
+
+```{r}
+unique(sapply(strsplit(colnames(methyl_lgg), split = "-"), `[[`, 4))
+unique(sapply(strsplit(colnames(methyl_gbm), split = "-"), `[[`, 4))
+
+isnormal_gbm = sapply(strsplit(colnames(methyl_gbm), split = "-"), `[[`, 4) == "11A"
+methyl_gbm_normal = methyl_gbm[, isnormal_gbm]
+dim(methyl_gbm_normal)
+```
+
+Looks like only have 11A as normal and only only one specimen is normal. So we would just want to look at all the other specimens. Now, we can then import them all together. We we need to subset.
+```{r}
+glioData = curatedTCGAData(c("GBM", "LGG"), c("Methylation"), dry.run = FALSE)
+glioData = glioData[ , , c(FALSE, TRUE, TRUE)]
+```
+
+Now we want to see the meta data and see which gives tumor type. Decided to use histological type. Also remove everything that does not have histological info.
+```{r}
+head(colnames(colData(glioData)), 30)
+
+unique(colData(glioData)$histological_type)
+
+isnotNA = colData(glioData)$histological_type != "NA"
+glioData = glioData[ , isnotNA, ]
+table(colData(glioData)$histological_type)
+```
+
+Get methylation data and make them into data matrix so that we can later manipulate them.
+
+```{r}
+methyl_gbm = assay(glioData[[1]])
+methyl_lgg = assay(glioData[[2]])
+methyl_all = cbind(methyl_gbm, methyl_lgg)
+rm(list = apropos("methyl_gbm"))
+rm(list = apropos("methyl_lgg"))
+```
+
+Also makes sure to only include cancer specimen. And then we can keep only the first 12 characters to match colData.
+```{r}
+istumor_all = sapply(strsplit(colnames(methyl_all), split = "-"), `[[`, 4) != "11A"
+methyl_all = methyl_all[, istumor_all]
+colnames(methyl_all) = substr(colnames(methyl_all), 1, 12)
+```
+
+Now only keep methylation data that has clinical information about histological type.
+```{r}
+methyl_all = methyl_all[ , rownames(colData(glioData))]
+```
+
+Now we want to make a model matrix with histological type and fit the methylation data to that.Turned out it is too big to be fit.
+```{r}
+x <- model.matrix(~colData(glioData)$histological_type)
+#fit<-lmFit(methyl_all,x) 
+#eb <- eBayes(fit)
+```
+
+Now we filter out the regions that actually has genomic coordinates.
+
+```{r}
+isnotna = rowData(glioData[[1]])$Genomic_Coordinate != "0"
+methyl_gr = rowData(glioData[[1]])[isnotna, ]
+methyl_gr= makeGRangesFromDataFrame(methyl_gr, seqnames.field = "Chromosome", start.field = "Genomic_Coordinate", end.field = "Genomic_Coordinate")
+```
+
+Now we use bumphunter to find out regions where methylation is significantly different. We need the chromosome, position, cluster definitions, the data (converted to dataframe) and the design matrix. Unfortunately again the files are too big to analyze - trim down.
+
+```{r}
+library(bumphunter)
+chr=as.factor(seqnames(methyl_gr)) 
+pos=start(methyl_gr)
+cl=clusterMaker(chr,pos,maxGap=500)
+#res<-bumphunter(methyl_all,x,chr=chr,pos=pos,cluster=cl,cutoff=0.1,B=0)
+```
+
+Let's find the two types that are most significantly different with survival rate and then compare their methylation.
+
+```{r}
+clin = colData(glioData)
+library(survival)
+ey = 1*(clin$vital_status == 1)
+fut = as.numeric(clin$days_to_death)
+su = Surv(fut, ey)
+plot(survfit(su~histological_type, data = clin), lwd = 2, lty = 1:6, xlim=c(0,3000))
+ntab = table(clin$histological_type)
+ns = paste("[n=", ntab, "]", sep = "")
+legend(2000, 1, lty=1:6, lwd = 2, legend = paste(levels(clin$age_group), ns))
+```
+
+Based on what we see, oligodendroglioma and gbm or de novo gbm has the biggest difference in terms of their survival rate - therefore, subset those and take a look. 
+
+```{r}
+two_extremes = colData(glioData)$histological_type == c("oligodendroglioma", "untreated primary (de novo) gbm")
+two_extremes = glioData[ , two_extremes, ]
+clin_2x = colData(two_extremes)
+
+```

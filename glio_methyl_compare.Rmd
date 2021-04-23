@@ -251,3 +251,38 @@ For example, find the gene that is related to the first region.
 ```{r}
 MbyRegion(1)
 ```
+Use the functions to look at a specific gene. First find the genome annotation - we are consistently using hg19.
+```{r}
+BiocManager::install("EnsDb.Hsapiens.v75")
+library(EnsDb.Hsapiens.v75)
+g75 = genes(EnsDb.Hsapiens.v75)
+g75 = addchr(g75)
+```
+
+And generate a graph using the following function:
+
+```{r}
+MbyGene = function(symbol){
+  #first, define the region
+target_gr = g75[g75$symbol %in%symbol]  
+results_gene <- subsetByOverlaps(methyl2x_gr, target_gr)
+  #next define tracks 
+  chr <- as.character(unique(seqnames(target_gr)))
+  dtrack <- DataTrack(results_gene, name = "methylation")
+  atrack <- AnnotationTrack(results_gene, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  data(geneModels)
+    grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(results_gene), end =end(results_gene), name = "ENSEMBL", transcriptAnnotation = "symbol")
+
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+
+```
+
+Now we can use this to inspect specific genes. For example, we can look at TP53.
+
+```{r}
+MbyGene("TP53")
+```

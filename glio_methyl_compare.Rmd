@@ -201,7 +201,7 @@ dtrack <- DataTrack(results_top, name = "methylation")
 atrack <- AnnotationTrack(results_top, name = "CpG")
 itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
 gtrack <- GenomeAxisTrack()
-plotTracks(list(itrack, dtrack, atrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+plotTracks(list(itrack, dtrack, atrack), type = c("a", "p"), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 ```
 Now we can make that into a function so that we can give it an index i and we can then visualize ith region.
 
@@ -218,7 +218,7 @@ MbyRegion_data = function(i){
   itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
   gtrack <- GenomeAxisTrack()
   #finally draw graphs
-  plotTracks(list(itrack, dtrack, gtrack, atrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+  plotTracks(list(itrack, dtrack, gtrack, atrack), type = c("a", "p"), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 }
   
 ```
@@ -243,7 +243,7 @@ MbyRegion = function(i){
   gtrack <- GenomeAxisTrack()
   grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl2x_tab_top), end =end(methyl2x_tab_top), name = "ENSEMBL", transcriptAnnotation = "symbol")
   #finally draw graphs
-  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), type = c("a", "p"), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 }
 ```
 
@@ -276,7 +276,7 @@ results_gene <- subsetByOverlaps(methyl2x_gr, target_gr)
     grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(results_gene), end =end(results_gene), name = "ENSEMBL", transcriptAnnotation = "symbol")
 
   #finally draw graphs
-  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), type = c("a", "p"), groups = clin_2x$histological_type, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
 }
 
 ```

@@ -141,7 +141,7 @@ plotTracks(list(itrack, dtrack, atrack), type = c("a", "p"), groups = clin_methy
 Now we can make that into a function so that we can give it an index i and we can then visualize ith region.
 
 ```{r}
-MbyRegion_data = function(i){
+MbyRegion_age_data = function(i){
   #first, define the region
   methyl_age_top <- methyl_age_gr[i,]
   results_top <- subsetByOverlaps(methyl_gr, methyl_age_top)
@@ -160,7 +160,7 @@ MbyRegion_data = function(i){
 
 Now define the MbyRegion.
 ```{r}
-MbyRegion = function(i){
+MbyRegion_age = function(i){
   #first, define the region
   methyl_age_top <- methyl_age_gr[i,]
   results_top <- subsetByOverlaps(methyl_gr, methyl_age_top)
@@ -180,7 +180,7 @@ MbyRegion = function(i){
 
 Now look at which gene is that.
 ```{r}
-MbyRegion(1)
+MbyRegion_age(1)
 ```
 
 Use the functions to look at a specific gene. First find the genome annotation - we are consistently using hg19.
@@ -194,7 +194,7 @@ g75 = addchr(g75)
 And generate a graph using the following function:
 
 ```{r}
-MbyGene = function(symbol){
+MbyGene_age = function(symbol){
   #first, define the region
   target_gr = g75[g75$symbol %in%symbol]  
   results_gene <- subsetByOverlaps(methyl_gr, target_gr)
@@ -213,5 +213,142 @@ MbyGene = function(symbol){
 
 Try looking at different genes.
 ```{r}
-MbyGene("PTEN")
+MbyGene_age("PTEN")
+```
+
+Now let's just look at 3 different tiers instead of all age groups. Everything is the same, but the model matrix is different.
+```{r}
+library(bumphunter)
+chr=as.factor(seqnames(methyl_gr)) 
+pos=start(methyl_gr)
+cl=clusterMaker(chr,pos,maxGap=500)
+x <- model.matrix(~clin_methyl$age_tier)
+res_tier<-bumphunter(methyl_data,x,chr=chr,pos=pos,cluster=cl,cutoff=0.1,B=0)
+```
+
+Now we look at our top table.
+```{r}
+methyl_tier_tab <- res_tier$table
+methyl_tier_gr<- makeGRangesFromDataFrame(methyl_tier_tab)
+unique_methyl = unique(clin_methyl$patientID)
+clin_methyl_unique = clin_methyl[unique_methyl, ]
+methyl_tier_gr3 <- methyl_tier_gr[3,]
+results_tier3 <- subsetByOverlaps(methyl_gr, methyl_tier_gr3)
+```
+
+Define different tracks for Gviz dataset.
+
+```{r}
+library(Gviz)
+chr <- as.character(unique(seqnames(methyl_tier_gr3)))
+dtrack <- DataTrack(results_tier3, name = "methylation")
+atrack <- AnnotationTrack(results_tier3, name = "CpG")
+itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+gtrack <- GenomeAxisTrack()
+plotTracks(list(itrack, dtrack, atrack), type = c("a", "p"), groups = clin_methyl_unique$age_tier, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+```
+
+Now we can make that into a function so that we can give it an index i and we can then visualize ith region.
+
+```{r}
+MbyRegion_tier_data = function(i){
+  #first, define the region
+  methyl_tier_top <- methyl_tier_gr[i,]
+  results_tier <- subsetByOverlaps(methyl_gr, methyl_tier_top)
+  #next define tracks 
+  library(Gviz)
+  chr <- as.character(unique(seqnames(methyl_tier_top)))
+  dtrack <- DataTrack(results_tier, name = "methylation")
+  atrack <- AnnotationTrack(results_tier, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack), type = c("a", "p"), groups = clin_methyl_unique$age_tier, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+  
+```
+
+Another one with the annotated gene.
+```{r}
+MbyRegion_tier = function(i){
+  #first, define the region
+  methyl_tier_top <- methyl_tier_gr[i,]
+  results_tier <- subsetByOverlaps(methyl_gr, methyl_tier_top)
+  #next define tracks 
+  library(Gviz)
+  chr <- as.character(unique(seqnames(methyl_tier_top)))
+  dtrack <- DataTrack(results_tier, name = "methylation")
+  atrack <- AnnotationTrack(results_tier, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl_tier_top), end =end(methyl_tier_top), name = "ENSEMBL", transcriptAnnotation = "symbol")
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), type = c("a", "p"), groups = clin_methyl_unique$age_tier, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+  
+```
+
+Finally, find a gene and see whether there is anything interesting.
+
+```{r}
+MbyGene_tier = function(symbol){
+  #first, define the region
+  target_gr = g75[g75$symbol %in%symbol]  
+  results_gene <- subsetByOverlaps(methyl_gr, target_gr)
+  #next define tracks 
+  chr <- as.character(unique(seqnames(target_gr)))
+  dtrack <- DataTrack(results_gene, name = "methylation")
+  atrack <- AnnotationTrack(results_gene, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  data(geneModels)
+  grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(results_gene), end =end(results_gene), name = "ENSEMBL", transcriptAnnotation = "symbol")
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), type = "heatmap", groups = clin_methyl_unique$age_tier, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+```
+
+Now we are more interested in looking at what those genes are.
+
+```{r}
+methyl_age_gr <- res$table[, 1:3]
+methyl_age_gr <- makeGRangesFromDataFrame(methyl_age_gr)
+values(methyl_age_gr) <- res$table[,5]
+```
+
+Print the name of the gene that is on the top list.
+```{r}
+geneRegion = function(i){
+  for(i in 1:i)
+    {anno = subsetByOverlaps(g75, methyl_age_gr[i,])
+  print(anno$gene_name)}
+  }
+```
+
+For example, now we can see what are the 10 most differentailly methylated genes.
+```{r}
+geneRegion(10)
+```
+
+
+Along the same line, we can also look at the mostly differentially methylated genes by each tier. 
+```{r}
+methyl_tier_gr <- res_tier$table[, 1:3]
+methyl_tier_gr <- makeGRangesFromDataFrame(methyl_tier_gr)
+values(methyl_tier_gr) <- res_tier$table[,5]
+```
+
+Print the name of the gene that is on the top list.
+```{r}
+geneRegion_tier = function(i){
+  for(i in 1:i)
+    {anno = subsetByOverlaps(g75, methyl_tier_gr[i,])
+  print(anno$gene_name)}
+  }
+```
+
+For example, now we can see what are the 10 most differentailly methylated genes.
+```{r}
+geneRegion_tier(10)
 ```

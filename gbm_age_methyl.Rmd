@@ -21,6 +21,7 @@ Use clinical data and seperate by age group.
 ```{r}
 clin = colData(gbmData)
 clin$age_group <- cut(clin$patient.age_at_initial_pathologic_diagnosis, seq(20, 90, 10))
+clin$age_tier <- cut(clin$patient.age_at_initial_pathologic_diagnosis, c(20, 50, 70, 90))
 
 ```
 
@@ -69,6 +70,12 @@ mm = model.matrix(~age_group, data=colData(rnaseq))
 f1 = lmFit(assay(rnaseq)[,which(colnames(rnaseq) %in% rownames(mm))], mm)
 ef1 = eBayes(f1)
 topTable(ef1)
+
+mm2 = model.matrix(~age_tier, data=colData(rnaseq))
+f2 = lmFit(assay(rnaseq)[,which(colnames(rnaseq) %in% rownames(mm))], mm)
+ef2 = eBayes(f2)
+topTable(ef2)
+
 ```
 
 Add a separate column to the clinical data (colData) to make next steps easier.
@@ -352,3 +359,4 @@ For example, now we can see what are the 10 most differentailly methylated genes
 ```{r}
 geneRegion_tier(10)
 ```
+

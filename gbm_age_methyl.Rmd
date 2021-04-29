@@ -1,0 +1,217 @@
+---
+title: "Glioblastoma Age Group Methylation Compare"
+output: html_document
+Author: Run Jin
+---
+
+Load all required packages for data retrieval and interrogation: 
+
+```{r setup, message = FALSE}
+
+BiocManager::install("curatedTCGA")
+
+library(curatedTCGAData)
+
+gbmData = curatedTCGAData("GBM", c("RNASeq2GeneNorm", "Mutation", "Methylation_methyl450"), dry.run = FALSE)
+
+```
+
+Use clinical data and seperate by age group.
+
+```{r}
+clin = colData(gbmData)
+clin$age_group <- cut(clin$patient.age_at_initial_pathologic_diagnosis, seq(20, 90, 10))
+
+```
+
+Now getting the mutation data. And 
+```{r}
+mut = gbmData[[1]]
+mut_samp_ids = colnames(mut)
+mut_samp_ids = substr(mut_samp_ids,1,12) 
+mut_assay = mut@assays
+```
+
+Get a mutation table with specimens, and see whether each age group has different number of variants.
+
+```{r}
+mut_df = mapply(function(id, a) {
+    d = as.data.frame(mcols(a)[c("Hugo_Symbol", "Variant_Classification")])
+    names(d) = c("symbol", "variant_class")
+    d$patientID = id
+    d
+}, id = mut_samp_ids, a = mut_assay, SIMPLIFY = FALSE, USE.NAMES = FALSE)
+mut_df = do.call(rbind, mut_df)
+
+mut_tab = table(mut_df$symbol, mut_df$variant_class)
+```
+
+Now combine mutation dataframe with the clinical data with age groups
+```{r}
+clin_age <- as.data.frame(clin[, c('patientID', 'years_to_birth', 'age_group', 'age_tier')])
+mut_df_clin = left_join(mut_df, clin_age)
+table(mut_df_clin$variant_class, mut_df_clin$age_group)
+```
+
+Now work on RNAseq.
+```{r}
+rnaseq = gbmData[[2]]
+assay(rnaseq) = log2(assay(rnaseq) + 1)
+
+colnames(rnaseq) = substr(colnames(rnaseq),1,12)   
+colData(rnaseq) = clin[colnames(rnaseq),]
+```
+
+Now find the genes that are differentially expressed based on age group. We use limma package to do statistical analysis and then we can get a top table with the most differentially expressed genes amongst age group.
+```{r}
+library(limma)
+mm = model.matrix(~age_group, data=colData(rnaseq))
+f1 = lmFit(assay(rnaseq)[,which(colnames(rnaseq) %in% rownames(mm))], mm)
+ef1 = eBayes(f1)
+topTable(ef1)
+```
+
+Add a separate column to the clinical data (colData) to make next steps easier.
+```{r}
+colData(gbmData)$age_group <- cut(colData(gbmData)$patient.age_at_initial_pathologic_diagnosis, seq(20, 90, 10))
+colData(gbmData)$age_tier <- cut(colData(gbmData)$patient.age_at_initial_pathologic_diagnosis, seq(20, 50, 70, 90))
+
+```
+
+Now we filter out the region that does not genomic coordinates.
+```{r}
+isnotna = rowData(gbmData[[3]])$Genomic_Coordinate != "0"
+methyl_gr = rowData(gbmData[[3]])[isnotna, ]
+methyl_data = assay(gbmData[[3]])[isnotna, ]
+
+unique(sapply(strsplit(colnames(methyl_data), split = "-"), `[[`, 4))
+isnormal_gbm = sapply(strsplit(colnames(methyl_data), split = "-"), `[[`, 4) == "11A"
+methyl_data = methyl_data[, !isnormal_gbm]
+colnames(methyl_data) = substr(colnames(methyl_data), 1, 12)
+
+clin_methyl = colData(gbmData)[colnames(methyl_data), ]
+hasnotage = is.na(clin_methyl$years_to_birth) 
+methyl_data = methyl_data[ , !hasnotage]
+clin_methyl = clin_methyl[!hasnotage, ]
+
+methyl_gr= makeGRangesFromDataFrame(methyl_gr, seqnames.field = "Chromosome", start.field = "Genomic_Coordinate", end.field = "Genomic_Coordinate")
+methyl_data = as.matrix(methyl_data)
+```
+
+Still more housekeeping to do.
+```{r}
+BiocManager::install("diffloop")
+library(diffloop)
+methyl_gr = addchr(methyl_gr)
+values(methyl_gr) = as.data.frame(methyl_data)
+```
+
+Now we initiate the bumphunter program.
+```{r}
+library(bumphunter)
+chr=as.factor(seqnames(methyl_gr)) 
+pos=start(methyl_gr)
+cl=clusterMaker(chr,pos,maxGap=500)
+x <- model.matrix(~clin_methyl$age_group)
+res<-bumphunter(methyl_data,x,chr=chr,pos=pos,cluster=cl,cutoff=0.1,B=0)
+```
+
+Now we look at our top table.
+```{r}
+methyl_age_tab <- res$table
+methyl_age_gr<- makeGRangesFromDataFrame(methyl_age_tab)
+unique_methyl = unique(clin_methyl$patientID)
+clin_methyl_unique = clin_methyl[unique_methyl, ]
+
+methyl_age_gr3 <- methyl_age_gr[3,]
+results_top3 <- subsetByOverlaps(methyl_gr, methyl_age_gr3)
+```
+Define different tracks for Gviz dataset.
+
+```{r}
+library(Gviz)
+chr <- as.character(unique(seqnames(methyl_age_gr3)))
+dtrack <- DataTrack(results_top3, name = "methylation")
+atrack <- AnnotationTrack(results_top3, name = "CpG")
+itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+gtrack <- GenomeAxisTrack()
+plotTracks(list(itrack, dtrack, atrack), type = c("a", "p"), groups = clin_methyl_unique$age_group, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+```
+
+Now we can make that into a function so that we can give it an index i and we can then visualize ith region.
+
+```{r}
+MbyRegion_data = function(i){
+  #first, define the region
+  methyl_age_top <- methyl_age_gr[i,]
+  results_top <- subsetByOverlaps(methyl_gr, methyl_age_top)
+  #next define tracks 
+  library(Gviz)
+  chr <- as.character(unique(seqnames(methyl_age_top)))
+  dtrack <- DataTrack(results_top, name = "methylation")
+  atrack <- AnnotationTrack(results_top, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack), type = c("a", "p"), groups = clin_methyl_unique$age_group, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+  
+```
+
+Now define the MbyRegion.
+```{r}
+MbyRegion = function(i){
+  #first, define the region
+  methyl_age_top <- methyl_age_gr[i,]
+  results_top <- subsetByOverlaps(methyl_gr, methyl_age_top)
+  #next define tracks 
+  library(Gviz)
+  chr <- as.character(unique(seqnames(methyl_age_top)))
+  dtrack <- DataTrack(results_top, name = "methylation")
+  atrack <- AnnotationTrack(results_top, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(methyl_age_top), end =end(methyl_age_top), name = "ENSEMBL", transcriptAnnotation = "symbol")
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), type = c("a", "p"), groups = clin_methyl_unique$age_group, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+  
+```
+
+Now look at which gene is that.
+```{r}
+MbyRegion(1)
+```
+
+Use the functions to look at a specific gene. First find the genome annotation - we are consistently using hg19.
+```{r}
+BiocManager::install("EnsDb.Hsapiens.v75")
+library(EnsDb.Hsapiens.v75)
+g75 = genes(EnsDb.Hsapiens.v75)
+g75 = addchr(g75)
+```
+
+And generate a graph using the following function:
+
+```{r}
+MbyGene = function(symbol){
+  #first, define the region
+  target_gr = g75[g75$symbol %in%symbol]  
+  results_gene <- subsetByOverlaps(methyl_gr, target_gr)
+  #next define tracks 
+  chr <- as.character(unique(seqnames(target_gr)))
+  dtrack <- DataTrack(results_gene, name = "methylation")
+  atrack <- AnnotationTrack(results_gene, name = "CpG")
+  itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+  gtrack <- GenomeAxisTrack()
+  data(geneModels)
+  grtrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, start = start(results_gene), end =end(results_gene), name = "ENSEMBL", transcriptAnnotation = "symbol")
+  #finally draw graphs
+  plotTracks(list(itrack, dtrack, gtrack, atrack, grtrack), type = c("a", "p"), groups = clin_methyl_unique$age_group, aggregateGroup = TRUE, aggregation = "max", legend=TRUE)
+}
+```
+
+Try looking at different genes.
+```{r}
+MbyGene("PTEN")
+```
